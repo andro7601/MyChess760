@@ -1,5 +1,6 @@
 package com.chess.services.chess;
 
+import com.chess.api.websocket.dto.MoveBroadcastDto;
 import com.github.bhlangonijr.chesslib.Board;
 import com.github.bhlangonijr.chesslib.move.Move;
 import com.chess.models.entity.ChessMatchModel;
@@ -19,18 +20,17 @@ public class ChessService {
     private final ChessMatchRepository chessMatchRepository;
     private static final String KEY_PREFIX = "match:";
 
-    public boolean handlePlayerMove(String matchId, Long playerId, String moveUci) {
+    public MoveBroadcastDto handlePlayerMove(String matchId, Long playerId, String moveUci) {
         String redisKey = KEY_PREFIX + matchId;
 
-        // 1. Grab snapshot from Redis
         MatchSnapshot snapshot = (MatchSnapshot) redisTemplate.opsForValue().get(redisKey);
-        if (snapshot == null) return false;
+        if (snapshot == null) return null;
 
 
         Long expectedPlayerId = snapshot.getTurnOwner().equals("WHITE")
                 ? snapshot.getWhitePlayerId()
                 : snapshot.getBlackPlayerId();
-        if (!playerId.equals(expectedPlayerId)) return false;
+        if (!playerId.equals(expectedPlayerId)) return null;
 
         try {
 
@@ -45,8 +45,7 @@ public class ChessService {
                     break;
                 }
             }
-            if (move == null) return false;
-
+            if (move == null) return null;
 
             board.doMove(move);
 
@@ -56,18 +55,25 @@ public class ChessService {
             snapshot.setPgn(updatedPgn);
 
 
-            if (board.isMated() || board.isDraw() || board.isStaleMate()) {
-                finalizeMatch(matchId, snapshot, board);
-                return true;
+            if(board.isMated() || board.isDraw() || board.isStaleMate()){
+                finalizeMatch(matchId,snapshot,board);
+                String reason=null;
+                if(board.isMated()){reason="Mated";}
+                if(board.isDraw()){reason="Draw";}
+                if(board.isStaleMate()){reason="Stale Mate";}
+                return new MoveBroadcastDto(moveUci,null,true,reason);
             }
+
+            String nextTurnColor = board.getSideToMove().toString();
+
+
             snapshot.setFen(board.getFen());
             snapshot.setTurnOwner(board.getSideToMove().toString());
-
             redisTemplate.opsForValue().set(redisKey, snapshot, 2, TimeUnit.HOURS);
-            return true;
+            return  new MoveBroadcastDto(moveUci,nextTurnColor,false,null);
 
         } catch (Exception e) {
-            return false;
+            return null;
         }
     }
 

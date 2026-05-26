@@ -1,6 +1,7 @@
 package com.chess.services;
 
 
+import com.chess.api.websocket.dto.MoveBroadcastDto;
 import com.chess.models.dto.MatchSnapshot;
 import com.chess.models.entity.ChessMatchModel;
 import com.chess.repositories.ChessMatchRepository;
@@ -14,6 +15,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
 
+import static org.junit.Assert.assertNull;
 import static org.junit.Assert.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.Mockito.*;
@@ -43,9 +45,8 @@ public class ChessServiceTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get("match:123")).thenReturn(snapshot);
 
-        boolean result = chessService.handlePlayerMove("123", 11L, "h5f7");
+        MoveBroadcastDto result = chessService.handlePlayerMove("123", 11L, "h5f7");
 
-        assertTrue(result);
         verify(chessMatchRepository, times(1)).save(any(ChessMatchModel.class));
         verify(redisTemplate, times(1)).delete("match:123");
     }
@@ -58,8 +59,8 @@ public class ChessServiceTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get("match:123")).thenReturn(snapshot);
 
-        boolean result = chessService.handlePlayerMove("123", 11L, "e2e5");
+        MoveBroadcastDto result = chessService.handlePlayerMove("123", 11L, "e2e5");
 
-        assertFalse(result, "Should decline move because e2e5 is illegal");
+        assertNull(result);
     }
 }
