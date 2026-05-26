@@ -19,6 +19,8 @@ target/
 *.iml
 *.ipr
 
+.antigravitycli
+
 ### NetBeans ###
 /nbproject/private/
 /nbbuild/
