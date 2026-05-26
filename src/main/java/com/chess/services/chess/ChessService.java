@@ -38,8 +38,14 @@ public class ChessService {
             board.loadFromFen(snapshot.getFen());
 
 
-            Move move = new Move(moveUci, board.getSideToMove());
-            if (!board.isMoveLegal(move, true)) return false;
+            Move move = null;
+            for (Move legalMove : board.legalMoves()) {
+                if (legalMove.toString().equals(moveUci)) {
+                    move = legalMove;
+                    break;
+                }
+            }
+            if (move == null) return false;
 
 
             board.doMove(move);
