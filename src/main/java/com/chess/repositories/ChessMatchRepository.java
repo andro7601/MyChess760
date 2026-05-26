@@ -1,12 +1,11 @@
 package com.chess.repositories;
 
-import com.chess.models.entity.PlayerModel;
+import com.chess.models.entity.ChessMatchModel;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
 import java.util.Optional;
 
 @Repository
-public interface PlayerRepository extends JpaRepository<PlayerModel, Long> {
-    Optional<PlayerModel> findByUsername(String username);
+public interface ChessMatchRepository extends JpaRepository<ChessMatchModel, Long> {
 }

@@ -1,7 +1,7 @@
 package com.chess.services;
 
 import com.chess.api.auth.dtos.AuthResponseDto;
-import com.chess.models.PlayerModel;
+import com.chess.models.entity.PlayerModel;
 import com.chess.repositories.PlayerRepository;
 import com.chess.services.auth.AuthService;
 import com.chess.services.auth.jwtService;

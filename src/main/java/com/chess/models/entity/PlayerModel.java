@@ -1,4 +1,4 @@
-package com.chess.models;
+package com.chess.models.entity;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;

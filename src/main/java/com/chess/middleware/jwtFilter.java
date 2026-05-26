@@ -1,6 +1,6 @@
 package com.chess.middleware;
 
-import com.chess.models.PlayerModel;
+import com.chess.models.entity.PlayerModel;
 import com.chess.repositories.PlayerRepository;
 import com.chess.services.auth.jwtService;
 import jakarta.servlet.FilterChain;

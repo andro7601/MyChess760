@@ -1,6 +1,6 @@
 package  com.chess.services.auth;
 
-import com.chess.models.PlayerModel;
+import com.chess.models.entity.PlayerModel;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
