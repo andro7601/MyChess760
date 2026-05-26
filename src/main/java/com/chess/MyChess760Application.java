@@ -11,7 +11,6 @@ public class MyChess760Application {
 	public static void main(String[] args) {
 		SpringApplication.run(MyChess760Application.class, args);
 		log.debug("i am Spiderman");
-
 	}
 
 }
