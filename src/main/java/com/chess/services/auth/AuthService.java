@@ -26,8 +26,8 @@ public class AuthService {
         PlayerModel playerModel = new PlayerModel();
         playerModel.setUsername(username);
         playerModel.setPassword(passwordEncoder.encode(password));
-        playerRepository.save(playerModel);
-        return new AuthResponseDto(jwtService.generateToken(playerModel));
+        playerRepository.saveAndFlush(playerModel);
+        return new AuthResponseDto(jwtService.generateToken(playerModel),playerModel.getId(),playerModel.getUsername());
     }
 
     @Transactional
@@ -37,7 +37,7 @@ public class AuthService {
         );
         PlayerModel player = playerRepository.findByUsername(username)
                 .orElseThrow();
-        return new AuthResponseDto(jwtService.generateToken(player));
+        return new AuthResponseDto(jwtService.generateToken(player),player.getId(),player.getUsername());
     }
 
 }

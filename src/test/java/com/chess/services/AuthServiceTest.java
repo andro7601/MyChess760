@@ -44,7 +44,7 @@ class AuthServiceTest {
         AuthResponseDto response = authService.register("andria", "rawpass");
 
         assertEquals("jwt-token", response.token());
-        verify(playerRepository).save(any(PlayerModel.class));
+        verify(playerRepository).saveAndFlush(any(PlayerModel.class));
         verify(passwordEncoder).encode("rawpass");
     }
 }
