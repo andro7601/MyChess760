@@ -17,6 +17,7 @@ import java.util.List;
 @AllArgsConstructor
 @NoArgsConstructor
 @Entity
+@Table(name = "players")
 public class PlayerModel implements UserDetails {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
