@@ -45,7 +45,8 @@ import static org.mockito.Mockito.when;
                 + "org.springframework.boot.autoconfigure.flyway.FlywayAutoConfiguration,"
                 + "org.springframework.boot.autoconfigure.data.jpa.JpaRepositoriesAutoConfiguration,"
                 + "org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration"
-)
+)//spring trys to build infrastructure to postgres flyway to postgres then redis and jpa hibernate to postgres
+//but when starting ./mvnw test we dont actually set them up and connection becomes null and causes a crash
 public class WebSocketIntegrationTest {
 
     @LocalServerPort

@@ -1,0 +1,459 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Chess WebSocket Tester</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            background: #f5f7fa;
+            color: #17202a;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #f8fafc 0%, #e8eef5 100%);
+        }
+
+        main {
+            max-width: 1120px;
+            margin: 0 auto;
+            padding: 32px 20px;
+        }
+
+        h1 {
+            margin: 0 0 6px;
+            font-size: 28px;
+            letter-spacing: 0;
+        }
+
+        p {
+            margin: 0;
+            color: #526070;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: minmax(300px, 420px) 1fr;
+            gap: 20px;
+            margin-top: 24px;
+            align-items: start;
+        }
+
+        section {
+            background: #ffffff;
+            border: 1px solid #d9e1ea;
+            border-radius: 8px;
+            padding: 18px;
+            box-shadow: 0 10px 24px rgba(32, 45, 64, 0.08);
+        }
+
+        h2 {
+            font-size: 16px;
+            margin: 0 0 14px;
+        }
+
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 650;
+            margin: 12px 0 6px;
+        }
+
+        input, textarea {
+            width: 100%;
+            box-sizing: border-box;
+            border: 1px solid #c9d4df;
+            border-radius: 6px;
+            padding: 10px 11px;
+            font: inherit;
+            background: #fbfcfe;
+            color: #17202a;
+        }
+
+        textarea {
+            min-height: 88px;
+            resize: vertical;
+        }
+
+        .row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 14px;
+        }
+
+        button {
+            border: 0;
+            border-radius: 6px;
+            padding: 10px 13px;
+            font: inherit;
+            font-weight: 700;
+            cursor: pointer;
+            background: #2364aa;
+            color: #fff;
+        }
+
+        button.secondary {
+            background: #eef3f8;
+            color: #203040;
+            border: 1px solid #cfd9e5;
+        }
+
+        button.danger {
+            background: #b42318;
+        }
+
+        button:disabled {
+            opacity: 0.55;
+            cursor: not-allowed;
+        }
+
+        .status {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            margin-top: 14px;
+            padding: 8px 10px;
+            border-radius: 999px;
+            background: #eef3f8;
+            color: #344457;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .dot {
+            width: 9px;
+            height: 9px;
+            border-radius: 50%;
+            background: #909baa;
+        }
+
+        .status.connected .dot {
+            background: #188038;
+        }
+
+        .status.error .dot {
+            background: #b42318;
+        }
+
+        pre {
+            min-height: 520px;
+            max-height: 70vh;
+            overflow: auto;
+            margin: 0;
+            padding: 14px;
+            background: #111827;
+            color: #e5e7eb;
+            border-radius: 8px;
+            font-size: 13px;
+            line-height: 1.45;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .hint {
+            margin-top: 10px;
+            font-size: 13px;
+            color: #607083;
+        }
+
+        @media (max-width: 840px) {
+            main {
+                padding: 22px 14px;
+            }
+
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            .row {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>Chess WebSocket Tester</h1>
+    <p>Login or paste a JWT, connect to STOMP, subscribe to your private queue, then join matchmaking.</p>
+
+    <div class="grid">
+        <section>
+            <h2>Connection</h2>
+
+            <label for="baseUrl">HTTP base URL</label>
+            <input id="baseUrl" value="">
+
+            <div class="row">
+                <div>
+                    <label for="username">Username</label>
+                    <input id="username" value="player1">
+                </div>
+                <div>
+                    <label for="password">Password</label>
+                    <input id="password" type="password" value="password123">
+                </div>
+            </div>
+
+            <div class="actions">
+                <button id="registerBtn" type="button">Register</button>
+                <button id="loginBtn" type="button" class="secondary">Login</button>
+            </div>
+
+            <label for="token">JWT token</label>
+            <textarea id="token" spellcheck="false"></textarea>
+
+            <div class="actions">
+                <button id="connectBtn" type="button">Connect</button>
+                <button id="disconnectBtn" type="button" class="secondary" disabled>Disconnect</button>
+            </div>
+
+            <div id="status" class="status"><span class="dot"></span><span>Disconnected</span></div>
+
+            <h2 style="margin-top: 22px;">Actions</h2>
+            <div class="actions">
+                <button id="subscribeQueueBtn" type="button" class="secondary" disabled>Subscribe /user/sub/queue</button>
+                <button id="joinBtn" type="button" disabled>Join matchmaking</button>
+                <button id="cancelBtn" type="button" class="secondary" disabled>Cancel matchmaking</button>
+            </div>
+
+            <label for="matchId">Match id</label>
+            <input id="matchId" placeholder="Filled after matchmaking">
+
+            <div class="actions">
+                <button id="subscribeMatchBtn" type="button" class="secondary" disabled>Subscribe match</button>
+            </div>
+
+            <div class="row">
+                <div>
+                    <label for="move">Move UCI</label>
+                    <input id="move" value="e2e4">
+                </div>
+                <div>
+                    <label for="moveDestination">Move destination</label>
+                    <input id="moveDestination" placeholder="/app/match/{id}/move">
+                </div>
+            </div>
+
+            <div class="actions">
+                <button id="sendMoveBtn" type="button" disabled>Send move</button>
+                <button id="clearBtn" type="button" class="danger">Clear log</button>
+            </div>
+
+            <div class="hint">Open this page in two tabs with two different users to create a match.</div>
+        </section>
+
+        <section>
+            <h2>Log</h2>
+            <pre id="log"></pre>
+        </section>
+    </div>
+</main>
+
+<script>
+    const $ = (id) => document.getElementById(id);
+    const logEl = $("log");
+    const statusEl = $("status");
+    let socket = null;
+    let connected = false;
+    let subscriptionId = 0;
+
+    $("baseUrl").value = window.location.origin && window.location.origin !== "null"
+        ? window.location.origin
+        : "http://localhost:8080";
+
+    function log(message, data) {
+        const time = new Date().toLocaleTimeString();
+        const suffix = data === undefined ? "" : "\n" + JSON.stringify(data, null, 2);
+        logEl.textContent += `[${time}] ${message}${suffix}\n\n`;
+        logEl.scrollTop = logEl.scrollHeight;
+    }
+
+    function setStatus(text, state) {
+        statusEl.className = `status ${state || ""}`;
+        statusEl.querySelector("span:last-child").textContent = text;
+    }
+
+    function setConnectedState(value) {
+        connected = value;
+        $("connectBtn").disabled = value;
+        $("disconnectBtn").disabled = !value;
+        $("subscribeQueueBtn").disabled = !value;
+        $("joinBtn").disabled = !value;
+        $("cancelBtn").disabled = !value;
+        $("subscribeMatchBtn").disabled = !value;
+        $("sendMoveBtn").disabled = !value;
+        setStatus(value ? "Connected" : "Disconnected", value ? "connected" : "");
+    }
+
+    function toWsUrl(baseUrl, token) {
+        const base = new URL(baseUrl);
+        base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
+        base.pathname = "/ws/websocket";
+        base.search = "";
+        base.searchParams.set("token", token);
+        return base.toString();
+    }
+
+    async function auth(path) {
+        const baseUrl = $("baseUrl").value.trim();
+        const response = await fetch(`${baseUrl}${path}`, {
+            method: "POST",
+            headers: {"Content-Type": "application/json"},
+            body: JSON.stringify({
+                username: $("username").value.trim(),
+                password: $("password").value
+            })
+        });
+
+        const text = await response.text();
+        let payload;
+        try {
+            payload = text ? JSON.parse(text) : {};
+        } catch {
+            payload = {raw: text};
+        }
+
+        if (!response.ok) {
+            throw new Error(`${response.status} ${response.statusText}: ${text}`);
+        }
+
+        $("token").value = payload.token || "";
+        log(`${path} succeeded`, payload);
+    }
+
+    function sendFrame(command, headers = {}, body = "") {
+        if (!socket || socket.readyState !== WebSocket.OPEN) {
+            log("Cannot send frame because socket is not open");
+            return;
+        }
+
+        const lines = [command];
+        for (const [key, value] of Object.entries(headers)) {
+            lines.push(`${key}:${value}`);
+        }
+        socket.send(lines.join("\n") + "\n\n" + body + "\0");
+        log(`SEND ${command}`, {headers, body});
+    }
+
+    function parseFrame(raw) {
+        const [head, ...bodyParts] = raw.split("\n\n");
+        const lines = head.split("\n").filter(Boolean);
+        const command = lines.shift() || "";
+        const headers = {};
+        for (const line of lines) {
+            const index = line.indexOf(":");
+            if (index > -1) {
+                headers[line.slice(0, index)] = line.slice(index + 1);
+            }
+        }
+        return {command, headers, body: bodyParts.join("\n\n")};
+    }
+
+    function handleFrame(frame) {
+        log(`RECEIVE ${frame.command}`, frame);
+
+        if (frame.command === "CONNECTED") {
+            setConnectedState(true);
+            subscribe("/user/sub/queue");
+            return;
+        }
+
+        if (frame.command === "MESSAGE" && frame.body) {
+            try {
+                const payload = JSON.parse(frame.body);
+                if (payload.matchId) {
+                    $("matchId").value = payload.matchId;
+                    $("moveDestination").value = `/app/match/${payload.matchId}/move`;
+                    subscribe(`/sub/match/${payload.matchId}`);
+                }
+            } catch {
+                // Keep raw frame in the log.
+            }
+        }
+    }
+
+    function subscribe(destination) {
+        sendFrame("SUBSCRIBE", {
+            id: `sub-${++subscriptionId}`,
+            destination
+        });
+    }
+
+    $("registerBtn").addEventListener("click", () => auth("/auth/register").catch((error) => log("Register failed", {message: error.message})));
+    $("loginBtn").addEventListener("click", () => auth("/auth/login").catch((error) => log("Login failed", {message: error.message})));
+
+    $("connectBtn").addEventListener("click", () => {
+        const token = $("token").value.trim();
+        if (!token) {
+            log("Paste a JWT token or login first");
+            return;
+        }
+
+        const wsUrl = toWsUrl($("baseUrl").value.trim(), token);
+        socket = new WebSocket(wsUrl);
+        setStatus("Connecting", "");
+        log("Opening WebSocket", {wsUrl});
+
+        socket.onopen = () => {
+            sendFrame("CONNECT", {
+                "accept-version": "1.2",
+                "heart-beat": "10000,10000"
+            });
+        };
+
+        socket.onmessage = (event) => {
+            String(event.data)
+                .split("\0")
+                .filter((part) => part.trim().length > 0)
+                .forEach((part) => handleFrame(parseFrame(part)));
+        };
+
+        socket.onerror = () => {
+            setStatus("Socket error", "error");
+            log("WebSocket error");
+        };
+
+        socket.onclose = (event) => {
+            setConnectedState(false);
+            log("WebSocket closed", {code: event.code, reason: event.reason});
+        };
+    });
+
+    $("disconnectBtn").addEventListener("click", () => {
+        sendFrame("DISCONNECT");
+        socket?.close();
+    });
+
+    $("subscribeQueueBtn").addEventListener("click", () => subscribe("/user/sub/queue"));
+    $("joinBtn").addEventListener("click", () => sendFrame("SEND", {destination: "/app/matchmaking/join"}));
+    $("cancelBtn").addEventListener("click", () => sendFrame("SEND", {destination: "/app/matchmaking/cancel"}));
+    $("subscribeMatchBtn").addEventListener("click", () => {
+        const matchId = $("matchId").value.trim();
+        if (matchId) {
+            subscribe(`/sub/match/${matchId}`);
+        }
+    });
+    $("sendMoveBtn").addEventListener("click", () => {
+        const destination = $("moveDestination").value.trim() || `/app/match/${$("matchId").value.trim()}/move`;
+        sendFrame("SEND", {
+            destination,
+            "content-type": "application/json"
+        }, JSON.stringify({move: $("move").value.trim()}));
+    });
+    $("clearBtn").addEventListener("click", () => {
+        logEl.textContent = "";
+    });
+</script>
+</body>
+</html>
