@@ -44,7 +44,7 @@ public class ChessServiceTest {
         ValueOperations<String, Object> valueOperations = mock(ValueOperations.class);
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get("match:123")).thenReturn(snapshot);
-
+        when(redisTemplate.delete("match:123")).thenReturn(true);
         MoveBroadcastDto result = chessService.handlePlayerMove("123", 11L, "h5f7");
 
         verify(chessMatchRepository, times(1)).save(any(ChessMatchModel.class));

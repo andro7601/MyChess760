@@ -60,4 +60,17 @@ public class WebSocketController {
         PlayerModel player = (PlayerModel) authentication.getPrincipal();
         matchmakingService.leaveQueue(player.getId());
     }
+
+    @MessageMapping("/matchmaking/reconnect")
+    public void Reconnect(Principal principal) {
+        Authentication authentication = (Authentication) principal;
+        PlayerModel player = (PlayerModel) authentication.getPrincipal();
+        MatchSnapshot match=matchmakingService.Reconnect(player.getId());
+        if(match==null){
+            return ;
+        }
+        messagingTemplate.convertAndSendToUser(
+                player.getId().toString(), "/sub/queue", match
+        );
+    }
 }

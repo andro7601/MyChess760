@@ -1,6 +1,7 @@
 package com.chess.services.chess;
 
 import com.chess.api.websocket.dto.MoveBroadcastDto;
+import com.chess.services.matchmaking.MatchmakingService;
 import com.github.bhlangonijr.chesslib.Board;
 import com.github.bhlangonijr.chesslib.move.Move;
 import com.chess.models.entity.ChessMatchModel;
@@ -54,14 +55,21 @@ public class ChessService {
                     : snapshot.getPgn() + " " + moveUci;
             snapshot.setPgn(updatedPgn);
 
+            if (board.isMated() || board.isDraw() || board.isStaleMate()) {
 
-            if(board.isMated() || board.isDraw() || board.isStaleMate()){
-                finalizeMatch(matchId,snapshot,board);
-                String reason=null;
-                if(board.isMated()){reason="Mated";}
-                if(board.isDraw()){reason="Draw";}
-                if(board.isStaleMate()){reason="Stale Mate";}
-                return new MoveBroadcastDto(moveUci,null,true,reason);
+                Boolean handlesFinalization = redisTemplate.delete(redisKey);
+
+                if (Boolean.TRUE.equals(handlesFinalization)) {
+                    finalizeMatch(snapshot, board);
+
+                    String reason = null;
+                    if (board.isMated()) { reason = "Mated"; }
+                    if (board.isDraw()) { reason = "Draw"; }
+                    if (board.isStaleMate()) { reason = "Stale Mate"; }
+                    return new MoveBroadcastDto(moveUci, null, true, reason);
+                } else {
+                    return null;
+                }
             }
 
             String nextTurnColor = board.getSideToMove().toString();
@@ -77,7 +85,7 @@ public class ChessService {
         }
     }
 
-    private void finalizeMatch(String matchId, MatchSnapshot snapshot, Board board) {
+    private void finalizeMatch(MatchSnapshot snapshot, Board board) {
         ChessMatchModel completedMatch = new ChessMatchModel();
         completedMatch.setWhitePlayerId(snapshot.getWhitePlayerId());
         completedMatch.setBlackPlayerId(snapshot.getBlackPlayerId());
@@ -99,6 +107,5 @@ public class ChessService {
         }
 
         chessMatchRepository.save(completedMatch);
-        redisTemplate.delete(KEY_PREFIX + matchId);
     }
 }
