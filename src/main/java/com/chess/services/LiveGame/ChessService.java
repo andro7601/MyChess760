@@ -1,7 +1,6 @@
-package com.chess.services.chess;
+package com.chess.services.LiveGame;
 
 import com.chess.api.websocket.dto.MoveBroadcastDto;
-import com.chess.services.matchmaking.MatchmakingService;
 import com.github.bhlangonijr.chesslib.Board;
 import com.github.bhlangonijr.chesslib.move.Move;
 import com.chess.models.entity.ChessMatchModel;
@@ -85,7 +84,7 @@ public class ChessService {
         }
     }
 
-    private void finalizeMatch(MatchSnapshot snapshot, Board board) {
+    public void finalizeMatch(MatchSnapshot snapshot, Board board) {
         ChessMatchModel completedMatch = new ChessMatchModel();
         completedMatch.setWhitePlayerId(snapshot.getWhitePlayerId());
         completedMatch.setBlackPlayerId(snapshot.getBlackPlayerId());
@@ -93,8 +92,16 @@ public class ChessService {
         completedMatch.setEndedAt(LocalDateTime.now());
 
         completedMatch.setPgn(snapshot.getPgn());
-
-        if (board.isMated()) {
+        if(snapshot.getWhiteTimeRemaining()==-1 ||  snapshot.getBlackTimeRemaining()==-1){
+            if(snapshot.getWhiteTimeRemaining()==-1)completedMatch.setWinReason(ChessMatchModel.WinReason.ABANDON_WHITE);
+            else completedMatch.setWinReason(ChessMatchModel.WinReason.ABANDON_BLACK);
+            completedMatch.setWinnerPlayerId(snapshot.getWhiteTimeRemaining()==-1 ? snapshot.getBlackPlayerId() : snapshot.getWhitePlayerId());
+        }
+        else if(snapshot.getWhiteTimeRemaining()==0 ||  snapshot.getBlackTimeRemaining()==0){
+            completedMatch.setWinReason(ChessMatchModel.WinReason.TIMEOUT);
+            completedMatch.setWinnerPlayerId(snapshot.getWhiteTimeRemaining()==0 ? snapshot.getBlackPlayerId() : snapshot.getWhitePlayerId());
+        }
+        else if (board.isMated()) {
             completedMatch.setWinReason(ChessMatchModel.WinReason.CHECKMATE);
             Long winnerId = board.getSideToMove().toString().equals("WHITE")
                     ? snapshot.getBlackPlayerId()

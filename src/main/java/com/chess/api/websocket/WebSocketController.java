@@ -5,8 +5,9 @@ import com.chess.api.websocket.dto.MoveRequestDto;
 import com.chess.models.dto.MatchSnapshot;
 import com.chess.models.entity.PlayerModel;
 import com.chess.repositories.PlayerRepository;
+import com.chess.services.LiveGame.MatchTimerService;
 import com.chess.services.auth.SecurityService;
-import com.chess.services.chess.ChessService;
+import com.chess.services.LiveGame.ChessService;
 import com.chess.services.matchmaking.MatchmakingService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
@@ -26,6 +27,7 @@ public class WebSocketController {
     private final MatchmakingService matchmakingService;
     private final PlayerRepository playerRepository;
     private final SecurityService securityService;
+    private final MatchTimerService  matchTimerService;
 
     @MessageMapping("/match/{matchId}/move")
     public void handleMove(@DestinationVariable String matchId, MoveRequestDto request, Principal principal) {
@@ -43,7 +45,7 @@ public class WebSocketController {
 
     @MessageMapping("/matchmaking/join")
     public void handleJoinQueue(Principal principal) {
-        PlayerModel player=securityService.getPlayer();
+        PlayerModel player=securityService.getPlayer(principal);
         MatchSnapshot match = matchmakingService.joinQueue(player);
 
         if (match != null) {
@@ -61,13 +63,18 @@ public class WebSocketController {
 
     @MessageMapping("/matchmaking/reconnect")
     public void Reconnect(Principal principal) {
-        Authentication authentication = (Authentication) principal;
-        PlayerModel player = (PlayerModel) authentication.getPrincipal();
+        PlayerModel player=securityService.getPlayer(principal);
         MatchSnapshot match=matchmakingService.Reconnect(player.getId());
         if(match==null){
             return ;
         }
         messagingTemplate.convertAndSendToUser(player.getUsername(), "/sub/queue", match);
+    }
+
+    @MessageMapping("/ping")
+    public void handlePing(Principal principal) {
+        PlayerModel player = playerRepository.findByUsername(principal.getName()).orElseThrow();
+        matchTimerService.ping(player.getId());
     }
 
     private void sendMatchToPlayer(Long playerId, MatchSnapshot match) {

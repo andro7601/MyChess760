@@ -104,9 +104,9 @@ public class WebSocketIntegrationTest {
         playerModel2.setPassword("password2");
         playerModel2.setElo(150);
 
-        when(securityService.getPlayer())
-                .thenReturn(playerModel1)  // first call
-                .thenReturn(playerModel2); // second call
+        when(securityService.getPlayer(any()))
+                .thenReturn(playerModel1)
+                .thenReturn(playerModel2);
         when(playerRepository.findById(1L)).thenReturn(Optional.of(playerModel1));
         when(playerRepository.findById(2L)).thenReturn(Optional.of(playerModel2));
         when(playerRepository.findByUsername("player1")).thenReturn(Optional.of(playerModel1));

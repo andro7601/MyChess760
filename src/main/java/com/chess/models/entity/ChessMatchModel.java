@@ -33,6 +33,6 @@ public class ChessMatchModel {
     private LocalDateTime createdAt;
     private LocalDateTime endedAt;
 
-    public enum WinReason { CHECKMATE, RESIGNATION, TIMEOUT, DRAW_MUTUAL, DRAW_STALEMATE }
+    public enum WinReason { CHECKMATE, RESIGNATION, TIMEOUT, DRAW_MUTUAL, DRAW_STALEMATE,ABANDON_WHITE,ABANDON_BLACK }
 
 }
