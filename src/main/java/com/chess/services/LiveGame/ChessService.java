@@ -50,7 +50,7 @@ public class ChessService {
             if (move == null) return null;
 
             board.doMove(move);
-
+            snapshot.setTurnStartTime(System.currentTimeMillis());
             String updatedPgn = (snapshot.getPgn() == null || snapshot.getPgn().isEmpty())
                     ? moveUci
                     : snapshot.getPgn() + " " + moveUci;
