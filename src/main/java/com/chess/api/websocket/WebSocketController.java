@@ -34,7 +34,7 @@ public class WebSocketController {
 
         Authentication authentication=(Authentication) principal;
         PlayerModel player= (PlayerModel) authentication.getPrincipal();
-        MoveBroadcastDto result = chessService.handlePlayerMove(matchId, player.getId(), request.move());
+        var result = chessService.handlePlayerMove(matchId, player.getId(), request.move());
 
         if (result == null) {
             return;

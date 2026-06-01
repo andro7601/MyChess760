@@ -1,5 +1,7 @@
 package com.chess.services.LiveGame;
 
+import com.chess.api.websocket.dto.GameBroadcast;
+import com.chess.api.websocket.dto.MatchEndBroadcastDto;
 import com.chess.api.websocket.dto.MoveBroadcastDto;
 import com.github.bhlangonijr.chesslib.Board;
 import com.github.bhlangonijr.chesslib.move.Move;
@@ -20,7 +22,7 @@ public class ChessService {
     private final ChessMatchRepository chessMatchRepository;
     private static final String KEY_PREFIX = "match:";
 
-    public MoveBroadcastDto handlePlayerMove(String matchId, Long playerId, String moveUci) {
+    public GameBroadcast handlePlayerMove(String matchId, Long playerId, String moveUci) {
         String redisKey = KEY_PREFIX + matchId;
 
         MatchSnapshot snapshot = (MatchSnapshot) redisTemplate.opsForValue().get(redisKey);
@@ -59,13 +61,16 @@ public class ChessService {
                 Boolean handlesFinalization = redisTemplate.delete(redisKey);
 
                 if (Boolean.TRUE.equals(handlesFinalization)) {
-                    finalizeMatch(snapshot, board);
 
                     String reason = null;
-                    if (board.isMated()) { reason = "Mated"; }
-                    if (board.isDraw()) { reason = "Draw"; }
-                    if (board.isStaleMate()) { reason = "Stale Mate"; }
-                    return new MoveBroadcastDto(moveUci, null, true, reason);
+                    if (board.isMated()) { reason = "CHECKMATE"; }
+                    if (board.isDraw()) { reason = "DRAW"; }
+                    if (board.isStaleMate()) { reason = "STALEMATE"; }
+                    finalizeMatch(snapshot, reason);
+                    Long winnerId = board.getSideToMove().toString().equals("WHITE")
+                            ? snapshot.getBlackPlayerId()
+                            : snapshot.getWhitePlayerId();
+                    return new MatchEndBroadcastDto("END",reason,winnerId);
                 } else {
                     return null;
                 }
@@ -77,14 +82,14 @@ public class ChessService {
             snapshot.setFen(board.getFen());
             snapshot.setTurnOwner(board.getSideToMove().toString());
             redisTemplate.opsForValue().set(redisKey, snapshot, 2, TimeUnit.HOURS);
-            return  new MoveBroadcastDto(moveUci,nextTurnColor,false,null);
+            return  new MoveBroadcastDto("MOVE",moveUci,nextTurnColor);
 
         } catch (Exception e) {
             return null;
         }
     }
 
-    public void finalizeMatch(MatchSnapshot snapshot, Board board) {
+    public void finalizeMatch(MatchSnapshot snapshot, String reason) {
         ChessMatchModel completedMatch = new ChessMatchModel();
         completedMatch.setWhitePlayerId(snapshot.getWhitePlayerId());
         completedMatch.setBlackPlayerId(snapshot.getBlackPlayerId());
@@ -101,13 +106,11 @@ public class ChessService {
             completedMatch.setWinReason(ChessMatchModel.WinReason.TIMEOUT);
             completedMatch.setWinnerPlayerId(snapshot.getWhiteTimeRemaining()==0 ? snapshot.getBlackPlayerId() : snapshot.getWhitePlayerId());
         }
-        else if (board.isMated()) {
+        else if (reason.equals("CHECKMATE")) {
             completedMatch.setWinReason(ChessMatchModel.WinReason.CHECKMATE);
-            Long winnerId = board.getSideToMove().toString().equals("WHITE")
-                    ? snapshot.getBlackPlayerId()
-                    : snapshot.getWhitePlayerId();
+            Long winnerId = snapshot.getTurnOwner().equals("WHITE")?snapshot.getWhitePlayerId():snapshot.getBlackPlayerId();
             completedMatch.setWinnerPlayerId(winnerId);
-        } else if (board.isStaleMate()) {
+        } else if (reason.equals("STALEMATE")) {
             completedMatch.setWinReason(ChessMatchModel.WinReason.DRAW_STALEMATE);
         } else {
             completedMatch.setWinReason(ChessMatchModel.WinReason.DRAW_MUTUAL);

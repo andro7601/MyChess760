@@ -1,74 +1,94 @@
-package com.chess.services.LiveGame;
+    package com.chess.services.LiveGame;
 
-import com.chess.models.dto.MatchSnapshot;
-import com.github.bhlangonijr.chesslib.Board;
-import lombok.RequiredArgsConstructor;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.scheduling.annotation.Scheduled;
-import org.springframework.stereotype.Service;
+    import com.chess.api.websocket.dto.MatchEndBroadcastDto;
+    import com.chess.models.dto.MatchSnapshot;
+    import com.github.bhlangonijr.chesslib.Board;
+    import lombok.RequiredArgsConstructor;
+    import org.springframework.data.redis.core.RedisTemplate;
+    import org.springframework.messaging.core.AbstractDestinationResolvingMessagingTemplate;
+    import org.springframework.messaging.handler.annotation.MessageMapping;
+    import org.springframework.messaging.simp.SimpMessagingTemplate;
+    import org.springframework.scheduling.annotation.Scheduled;
+    import org.springframework.stereotype.Service;
 
-import java.util.Objects;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
+    import java.util.Objects;
+    import java.util.Set;
+    import java.util.concurrent.ConcurrentHashMap;
 
-@Service
-@RequiredArgsConstructor
-public class MatchTimerService {
+    @Service
+    @RequiredArgsConstructor
+    public class MatchTimerService {
 
-    private final RedisTemplate<String, Object> redisTemplate;
-    private final ChessService chessService;
-    private static final String MATCH_PREFIX = "match:";
-    private final ConcurrentHashMap<Long,Long> lastPing = new ConcurrentHashMap<>();
+        private final RedisTemplate<String, Object> redisTemplate;
+        private final ChessService chessService;
+        private final SimpMessagingTemplate messagingTemplate;
 
-    @Scheduled(fixedRate = 10000)
-    public void checkMatchTimer() {
-        Set<String> keys = redisTemplate.keys(MATCH_PREFIX + "*");
-        if (keys == null || keys.isEmpty()) return;
+        private static final String MATCH_PREFIX = "match:";
+        private final ConcurrentHashMap<Long,Long> lastPing = new ConcurrentHashMap<>();
 
-        long now = System.currentTimeMillis();
 
-        keys.stream()
-                .map(key -> (MatchSnapshot) redisTemplate.opsForValue().get(key))
-                .filter(Objects::nonNull)
-                .forEach(match -> {
-                    String reason = getTerminationReason(match, now);
-                    if (reason == null) return;
+        @Scheduled(fixedRate = 10000)
+        public void checkMatchTimer() {
+            Set<String> keys = redisTemplate.keys(MATCH_PREFIX + "*");
+            if (keys == null || keys.isEmpty()) return;
 
-                    Boolean deleted = redisTemplate.delete(MATCH_PREFIX + match.getMatchId());
-                    if (!Boolean.TRUE.equals(deleted)) return;
+            long now = System.currentTimeMillis();
 
-                    applyTermination(match, reason);
-                    Board board = new Board();
-                    board.loadFromFen(match.getFen());
-                    chessService.finalizeMatch(match, board);
-                });
-        lastPing.entrySet().removeIf(entry -> now - entry.getValue() > 60_000);
-    }
+            keys.stream()
+                    .map(key -> (MatchSnapshot) redisTemplate.opsForValue().get(key))
+                    .filter(Objects::nonNull)
+                    .forEach(match -> {
+                        String reason = getTerminationReason(match, now);
+                        if (reason == null) return;
 
-    private String getTerminationReason(MatchSnapshot match, long now) {
-        if (now - match.getTurnStartTime() > 60_000) return "TIMEOUT";
+                        Boolean deleted = redisTemplate.delete(MATCH_PREFIX + match.getMatchId());
+                        if (!Boolean.TRUE.equals(deleted)) return;
 
-        Long whitePing = lastPing.get(match.getWhitePlayerId());
-        if (whitePing != null && now - whitePing > 30_000) return "ABANDON_WHITE";
+                        applyTermination(match, reason);
+                        chessService.finalizeMatch(match,reason);
+                    });
+            lastPing.entrySet().removeIf(entry -> now - entry.getValue() > 60_000);
+        }
 
-        Long blackPing = lastPing.get(match.getBlackPlayerId());
-        if (blackPing != null && now - blackPing > 30_000) return "ABANDON_BLACK";
+        private String getTerminationReason(MatchSnapshot match, long now) {
+            if (now - match.getTurnStartTime() > 60_000) return "TIMEOUT";
 
-        return null;
-    }
+            Long whitePing = lastPing.get(match.getWhitePlayerId());
+            if (whitePing != null && now - whitePing > 30_000) return "ABANDON_WHITE";
 
-    private void applyTermination(MatchSnapshot match, String reason) {
-        switch (reason) {
-            case "TIMEOUT" -> {
-                if (match.getTurnOwner().equals("WHITE")) match.setWhiteTimeRemaining(0);
-                else match.setBlackTimeRemaining(0);
+            Long blackPing = lastPing.get(match.getBlackPlayerId());
+            if (blackPing != null && now - blackPing > 30_000) return "ABANDON_BLACK";
+
+            return null;
+        }
+
+        private void applyTermination(MatchSnapshot match, String reason) {
+            Long winnerId=null;
+            switch (reason) {
+                case "TIMEOUT" -> {
+                    if (match.getTurnOwner().equals("WHITE")) {
+                        match.setWhiteTimeRemaining(0);
+                        winnerId=match.getBlackPlayerId();
+                    }
+                    else {
+                        match.setBlackTimeRemaining(0);
+                        winnerId=match.getWhitePlayerId();
+                    }
+                }
+                case "ABANDON_WHITE" -> {
+                    winnerId=match.getBlackPlayerId();
+                    match.setWhiteTimeRemaining(-1);
+                }
+                case "ABANDON_BLACK" -> {
+                    winnerId=match.getWhitePlayerId();
+                    match.setBlackTimeRemaining(-1);
+                }
             }
-            case "ABANDON_WHITE" -> match.setWhiteTimeRemaining(-1);
-            case "ABANDON_BLACK" -> match.setBlackTimeRemaining(-1);
+            MatchEndBroadcastDto end = new MatchEndBroadcastDto("END", reason, winnerId);
+            messagingTemplate.convertAndSend("/sub/match/" + match.getMatchId(), end);
+        }
+
+        public void ping(Long playerId){
+            lastPing.put(playerId,System.currentTimeMillis());
         }
     }
-
-    public void ping(Long playerId){
-        lastPing.put(playerId,System.currentTimeMillis());
-    }
-}

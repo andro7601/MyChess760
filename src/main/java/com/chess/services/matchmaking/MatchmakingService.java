@@ -20,7 +20,7 @@
     public class MatchmakingService {
 
         private final RedisTemplate<String, Object> redisTemplate;
-        private final SecurityService securityService;
+        private static final long tenMininms=600_000L;
 
         private final ConcurrentLinkedQueue<Long> waitingQueue = new ConcurrentLinkedQueue<>();
         private static final String STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -79,6 +79,9 @@
             snapshot.setWhitePlayerId(whitePlayerId);
             snapshot.setBlackPlayerId(blackPlayerId);
             snapshot.setPgn("");
+            snapshot.setBlackTimeRemaining(tenMininms);
+            snapshot.setWhiteTimeRemaining(tenMininms);
+            snapshot.setTurnStartTime(System.currentTimeMillis());
             redisTemplate.opsForValue().set(MATCH_PREFIX + matchUuid, snapshot, 2, TimeUnit.HOURS);
 
             return snapshot;

@@ -44,7 +44,7 @@ public class ChessServiceTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get("match:123")).thenReturn(snapshot);
         when(redisTemplate.delete("match:123")).thenReturn(true);
-        MoveBroadcastDto result = chessService.handlePlayerMove("123", 11L, "h5f7");
+        var result = chessService.handlePlayerMove("123", 11L, "h5f7");
 
         verify(chessMatchRepository, times(1)).save(any(ChessMatchModel.class));
         verify(redisTemplate, times(1)).delete("match:123");
@@ -58,7 +58,7 @@ public class ChessServiceTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get("match:123")).thenReturn(snapshot);
 
-        MoveBroadcastDto result = chessService.handlePlayerMove("123", 11L, "e2e5");
+        var result = chessService.handlePlayerMove("123", 11L, "e2e5");
 
         assertNull(result);
     }

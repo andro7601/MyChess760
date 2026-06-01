@@ -1,8 +1,8 @@
 package com.chess.api.websocket.dto;
 
-public record MoveBroadcastDto (
+public record MatchEndBroadcastDto(
         String type,
-        String move,
-        String turnOwner
+        String reason,
+        Long winnerId
 ) implements GameBroadcast{
 }
