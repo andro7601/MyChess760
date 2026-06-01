@@ -2,6 +2,7 @@
 
     import com.chess.api.websocket.dto.MatchEndBroadcastDto;
     import com.chess.models.dto.MatchSnapshot;
+    import com.chess.models.entity.ChessMatchModel;
     import com.github.bhlangonijr.chesslib.Board;
     import lombok.RequiredArgsConstructor;
     import org.springframework.data.redis.core.RedisTemplate;
@@ -11,6 +12,7 @@
     import org.springframework.scheduling.annotation.Scheduled;
     import org.springframework.stereotype.Service;
 
+    import com.chess.models.entity.ChessMatchModel.WinReason;
     import java.util.Objects;
     import java.util.Set;
     import java.util.concurrent.ConcurrentHashMap;
@@ -38,7 +40,7 @@
                     .map(key -> (MatchSnapshot) redisTemplate.opsForValue().get(key))
                     .filter(Objects::nonNull)
                     .forEach(match -> {
-                        String reason = getTerminationReason(match, now);
+                        ChessMatchModel.WinReason reason = getTerminationReason(match, now);
                         if (reason == null) return;
 
                         Boolean deleted = redisTemplate.delete(MATCH_PREFIX + match.getMatchId());
@@ -50,22 +52,27 @@
             lastPing.entrySet().removeIf(entry -> now - entry.getValue() > 60_000);
         }
 
-        private String getTerminationReason(MatchSnapshot match, long now) {
-            if (now - match.getTurnStartTime() > 60_000) return "TIMEOUT";
+        private ChessMatchModel.WinReason getTerminationReason(MatchSnapshot snapshot, long now) {
+            if (now - snapshot.getTurnStartTime() > 60_000) return WinReason.TIMEOUT;
 
-            Long whitePing = lastPing.get(match.getWhitePlayerId());
-            if (whitePing != null && now - whitePing > 30_000) return "ABANDON_WHITE";
+            Long whitePing = lastPing.get(snapshot.getWhitePlayerId());
 
-            Long blackPing = lastPing.get(match.getBlackPlayerId());
-            if (blackPing != null && now - blackPing > 30_000) return "ABANDON_BLACK";
+            if (whitePing != null && now - whitePing > 30_000){
+                return WinReason.ABANDON_WHITE;
+            }
+
+            Long blackPing = lastPing.get(snapshot.getBlackPlayerId());
+            if (blackPing != null && now - blackPing > 30_000){
+                return WinReason.ABANDON_BLACK;
+            }
 
             return null;
         }
 
-        private void applyTermination(MatchSnapshot match, String reason) {
+        private void applyTermination(MatchSnapshot match, ChessMatchModel.WinReason reason) {
             Long winnerId=null;
             switch (reason) {
-                case "TIMEOUT" -> {
+                case WinReason.TIMEOUT -> {
                     if (match.getTurnOwner().equals("WHITE")) {
                         match.setWhiteTimeRemaining(0);
                         winnerId=match.getBlackPlayerId();
@@ -75,16 +82,17 @@
                         winnerId=match.getWhitePlayerId();
                     }
                 }
-                case "ABANDON_WHITE" -> {
+                case WinReason.ABANDON_WHITE -> {
                     winnerId=match.getBlackPlayerId();
                     match.setWhiteTimeRemaining(-1);
                 }
-                case "ABANDON_BLACK" -> {
+                case WinReason.ABANDON_BLACK -> {
                     winnerId=match.getWhitePlayerId();
                     match.setBlackTimeRemaining(-1);
                 }
             }
-            MatchEndBroadcastDto end = new MatchEndBroadcastDto("END", reason, winnerId);
+            match.setWinnerId(winnerId);
+            MatchEndBroadcastDto end = new MatchEndBroadcastDto("END", reason.toString(), winnerId);
             messagingTemplate.convertAndSend("/sub/match/" + match.getMatchId(), end);
         }
 

@@ -18,7 +18,7 @@ public class MatchSnapshot implements Serializable {
     private long whiteTimeRemaining;
     private long blackTimeRemaining;
     private long turnStartTime;
-
+    private Long winnerId;
     private String pgn;
 
 

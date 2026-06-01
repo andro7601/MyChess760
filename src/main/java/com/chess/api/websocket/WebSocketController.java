@@ -82,4 +82,16 @@ public class WebSocketController {
                 .map(PlayerModel::getUsername)
                 .ifPresent(username -> messagingTemplate.convertAndSendToUser(username, "/sub/queue", match));
     }
+
+    @MessageMapping("/match/{matchId}/resign")
+    public void handleResign(@DestinationVariable String matchId, Principal principal) {
+        Long playerid=securityService.getPlayerId(principal);
+        chessService.handleResign(matchId, playerid);
+    }
+
+    @MessageMapping("/match/{matchId}/draw")
+    public void handleDraw(@DestinationVariable String matchId, Principal principal) {
+        Long playerid=securityService.getPlayerId(principal);
+        chessService.handleDraw(matchId, playerid);
+    }
 }
