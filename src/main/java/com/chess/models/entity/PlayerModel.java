@@ -32,10 +32,14 @@ public class PlayerModel implements UserDetails {
     @Column(updatable = false, insertable = false)
     private LocalDateTime createdAt;
 
+    @Column(nullable = false)
+    private int elo;
+
     @Override
     public Collection<? extends GrantedAuthority> getAuthorities() {
         return List.of();
     }
+
 
     @Override public boolean isAccountNonExpired() { return true; }
     @Override public boolean isAccountNonLocked() { return true; }

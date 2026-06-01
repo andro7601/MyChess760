@@ -6,6 +6,7 @@ import com.chess.models.dto.MatchSnapshot;
 import com.chess.models.entity.PlayerModel;
 import com.chess.repositories.ChessMatchRepository;
 import com.chess.repositories.PlayerRepository;
+import com.chess.services.auth.SecurityService;
 import com.chess.services.auth.jwtService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -49,6 +50,9 @@ import static org.mockito.Mockito.when;
 //but when starting ./mvnw test we dont actually set them up and connection becomes null and causes a crash
 public class WebSocketIntegrationTest {
 
+    @MockitoBean
+    private SecurityService securityService;
+
     @LocalServerPort
     private int port;
 
@@ -82,6 +86,7 @@ public class WebSocketIntegrationTest {
         Map<String, Object> redisStore = new ConcurrentHashMap<>();
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
         when(valueOperations.get(anyString())).thenAnswer(invocation -> redisStore.get(invocation.getArgument(0)));
+
         doAnswer(invocation -> {
             redisStore.put(invocation.getArgument(0), invocation.getArgument(1));
             return null;
@@ -91,12 +96,17 @@ public class WebSocketIntegrationTest {
         playerModel1.setId(1L);
         playerModel1.setUsername("player1");
         playerModel1.setPassword("password1");
+        playerModel1.setElo(150);
 
         PlayerModel playerModel2 = new PlayerModel();
         playerModel2.setId(2L);
         playerModel2.setUsername("player2");
         playerModel2.setPassword("password2");
+        playerModel2.setElo(150);
 
+        when(securityService.getPlayer())
+                .thenReturn(playerModel1)  // first call
+                .thenReturn(playerModel2); // second call
         when(playerRepository.findById(1L)).thenReturn(Optional.of(playerModel1));
         when(playerRepository.findById(2L)).thenReturn(Optional.of(playerModel2));
         when(playerRepository.findByUsername("player1")).thenReturn(Optional.of(playerModel1));

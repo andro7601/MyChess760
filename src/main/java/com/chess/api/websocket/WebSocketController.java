@@ -5,6 +5,7 @@ import com.chess.api.websocket.dto.MoveRequestDto;
 import com.chess.models.dto.MatchSnapshot;
 import com.chess.models.entity.PlayerModel;
 import com.chess.repositories.PlayerRepository;
+import com.chess.services.auth.SecurityService;
 import com.chess.services.chess.ChessService;
 import com.chess.services.matchmaking.MatchmakingService;
 import lombok.RequiredArgsConstructor;
@@ -24,6 +25,7 @@ public class WebSocketController {
     private final SimpMessagingTemplate messagingTemplate;
     private final MatchmakingService matchmakingService;
     private final PlayerRepository playerRepository;
+    private final SecurityService securityService;
 
     @MessageMapping("/match/{matchId}/move")
     public void handleMove(@DestinationVariable String matchId, MoveRequestDto request, Principal principal) {
@@ -41,10 +43,8 @@ public class WebSocketController {
 
     @MessageMapping("/matchmaking/join")
     public void handleJoinQueue(Principal principal) {
-        Authentication authentication = (Authentication) principal;
-        PlayerModel player = (PlayerModel) authentication.getPrincipal();
-
-        MatchSnapshot match = matchmakingService.joinQueue(player.getId());
+        PlayerModel player=securityService.getPlayer();
+        MatchSnapshot match = matchmakingService.joinQueue(player);
 
         if (match != null) {
             sendMatchToPlayer(match.getWhitePlayerId(), match);
