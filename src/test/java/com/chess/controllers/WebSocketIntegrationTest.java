@@ -1,5 +1,7 @@
 package com.chess.controllers;
 
+import com.chess.api.websocket.dto.DrawOfferDto;
+import com.chess.api.websocket.dto.MatchEndBroadcastDto;
 import com.chess.api.websocket.dto.MoveBroadcastDto;
 import com.chess.api.websocket.dto.MoveRequestDto;
 import com.chess.models.dto.MatchSnapshot;
@@ -9,6 +11,7 @@ import com.chess.repositories.PlayerRepository;
 import com.chess.services.auth.SecurityService;
 import com.chess.services.auth.jwtService;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,15 +32,15 @@ import org.springframework.web.socket.messaging.WebSocketStompClient;
 import java.lang.reflect.Type;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.doAnswer;
-import static org.mockito.Mockito.when;
-
+import static org.mockito.Mockito.*;
+@org.junit.jupiter.api.TestMethodOrder(org.junit.jupiter.api.MethodOrderer.OrderAnnotation.class)
 @SpringBootTest(
         webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = "spring.autoconfigure.exclude="
@@ -52,151 +55,244 @@ public class WebSocketIntegrationTest {
 
     @MockitoBean
     private SecurityService securityService;
-
-    @LocalServerPort
-    private int port;
-
     @MockitoBean
     private PlayerRepository playerRepository;
-
     @MockitoBean
     private ChessMatchRepository chessMatchRepository;
-
     @MockitoBean
     private RedisTemplate<String, Object> redisTemplate;
-
     @MockitoBean
     private ValueOperations<String, Object> valueOperations;
 
     @Autowired
     private jwtService jwtService;
 
-    private String serverWsUrl;
-    private WebSocketStompClient testClient;
+    @LocalServerPort
+    private int port;
 
-    @BeforeEach
-    void setup() {
-        this.serverWsUrl = "ws://localhost:" + port + "/ws/websocket";
-        this.testClient = new WebSocketStompClient(new StandardWebSocketClient());
-        this.testClient.setMessageConverter(new MappingJackson2MessageConverter());
-    }
+    private static StompSession session1;
+    private static StompSession session2;
+    private static MatchSnapshot sharedMatch;
 
-    @Test
-    void verifyMatchmakingFlowAndRouting() throws Exception {
-        Map<String, Object> redisStore = new ConcurrentHashMap<>();
-        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
-        when(valueOperations.get(anyString())).thenAnswer(invocation -> redisStore.get(invocation.getArgument(0)));
+    private static PlayerModel playerModel1;
+    private static PlayerModel playerModel2;
 
-        doAnswer(invocation -> {
-            redisStore.put(invocation.getArgument(0), invocation.getArgument(1));
-            return null;
-        }).when(valueOperations).set(anyString(), any(), anyLong(), any(TimeUnit.class));
-
-        PlayerModel playerModel1 = new PlayerModel();
+    static {
+        playerModel1 = new PlayerModel();
         playerModel1.setId(1L);
         playerModel1.setUsername("player1");
         playerModel1.setPassword("password1");
         playerModel1.setElo(150);
 
-        PlayerModel playerModel2 = new PlayerModel();
+        playerModel2 = new PlayerModel();
         playerModel2.setId(2L);
         playerModel2.setUsername("player2");
         playerModel2.setPassword("password2");
         playerModel2.setElo(150);
+    }
 
-        when(securityService.getPlayer(any()))
-                .thenReturn(playerModel1)
-                .thenReturn(playerModel2);
+    private static Map<String, Object> redisStore = new ConcurrentHashMap<>();
+
+    @BeforeEach
+    void setup() throws Exception {
+        stubMocks();
+
+        if (session1 != null && session1.isConnected()) return;
+        createConnections();
+    }
+
+    private void stubMocks() {
+        when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        when(valueOperations.get(anyString())).thenAnswer(inv -> {
+            String key = inv.getArgument(0);
+
+            if (redisStore.containsKey(key)) {
+                return redisStore.get(key);
+            }
+
+            if (key.contains("DRAW") || key.contains("draw")) {
+                return null;
+            }
+
+            if (sharedMatch != null && key.contains(sharedMatch.getMatchId())) {
+                return sharedMatch;
+            }
+
+            return null;
+        });
+
+        doAnswer(inv -> {
+            redisStore.put(inv.getArgument(0), inv.getArgument(1));
+            return null;
+        }).when(valueOperations).set(anyString(), any(), anyLong(), any(TimeUnit.class));
+
+        when(redisTemplate.delete(anyString())).thenReturn(true);
+
+
+
+
+        when(securityService.getPlayer(any())).thenAnswer(inv -> {
+            java.security.Principal principal = inv.getArgument(0, java.security.Principal.class);
+            if (principal != null && "player2".equals(principal.getName())) {
+                return playerModel2;
+            }
+            return playerModel1;
+        });
+
+        when(securityService.getPlayerId(any())).thenAnswer(inv -> {
+            java.security.Principal principal = inv.getArgument(0, java.security.Principal.class);
+            if (principal != null && "player2".equals(principal.getName())) {
+                return playerModel2.getId();
+            }
+            return playerModel1.getId();
+        });
+
+
         when(playerRepository.findById(1L)).thenReturn(Optional.of(playerModel1));
         when(playerRepository.findById(2L)).thenReturn(Optional.of(playerModel2));
         when(playerRepository.findByUsername("player1")).thenReturn(Optional.of(playerModel1));
         when(playerRepository.findByUsername("player2")).thenReturn(Optional.of(playerModel2));
-        when(playerRepository.save(ArgumentMatchers.any(PlayerModel.class)))
-                .thenAnswer(invocation -> invocation.getArgument(0));
+        when(playerRepository.save(any(PlayerModel.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+    }
 
-        String token1 = jwtService.generateToken(playerModel1);
+    private void createConnections() throws Exception {
 
-        WebSocketHttpHeaders httpHeaders1 = new WebSocketHttpHeaders();
-        httpHeaders1.add("Authorization", "Bearer " + token1);
+        WebSocketStompClient client = new WebSocketStompClient(new StandardWebSocketClient());
+        client.setMessageConverter(new MappingJackson2MessageConverter());
+        String url = "ws://localhost:" + port + "/ws/websocket";
 
-        StompHeaders stompHeaders1 = new StompHeaders();
-        stompHeaders1.add("Authorization", "Bearer " + token1);
+        session1 = connect(client, url, jwtService.generateToken(playerModel1));
+        session2 = connect(client, url, jwtService.generateToken(playerModel2));
+    }
 
-        StompSession session1 = testClient.connectAsync(
-                serverWsUrl, httpHeaders1, stompHeaders1, new StompSessionHandlerAdapter() {}
-        ).get(5, TimeUnit.SECONDS);
+    private StompSession connect(WebSocketStompClient client, String url, String token)
+            throws Exception {
+        WebSocketHttpHeaders httpHeaders = new WebSocketHttpHeaders();
+        httpHeaders.add("Authorization", "Bearer " + token);
+        StompHeaders stompHeaders = new StompHeaders();
+        stompHeaders.add("Authorization", "Bearer " + token);
+        return client.connectAsync(url, httpHeaders, stompHeaders,
+                new StompSessionHandlerAdapter() {}).get(5, TimeUnit.SECONDS);
+    }
 
-        String token2 = jwtService.generateToken(playerModel2);
+    @Test
+    @Order(1)
+    void verifyMatchmakingFlowAndRouting() throws Exception {
+        CompletableFuture<MatchSnapshot> p1Box = new CompletableFuture<>();
+        CompletableFuture<MatchSnapshot> p2Box = new CompletableFuture<>();
 
-        WebSocketHttpHeaders httpHeaders2 = new WebSocketHttpHeaders();
-        httpHeaders2.add("Authorization", "Bearer " + token2);
-
-        StompHeaders stompHeaders2 = new StompHeaders();
-        stompHeaders2.add("Authorization", "Bearer " + token2);
-
-        StompSession session2 = testClient.connectAsync(
-                serverWsUrl, httpHeaders2, stompHeaders2, new StompSessionHandlerAdapter() {}
-        ).get(5, TimeUnit.SECONDS);
-
-        CompletableFuture<MatchSnapshot> player1Mailbox = new CompletableFuture<>();
-        CompletableFuture<MatchSnapshot> player2Mailbox = new CompletableFuture<>();
-
-        session1.subscribe("/user/sub/queue", new StompFrameHandler() {
-            @Override
-            public Type getPayloadType(StompHeaders headers) { return MatchSnapshot.class; }
-            @Override
-            public void handleFrame(StompHeaders headers, Object payload) {
-                player1Mailbox.complete((MatchSnapshot) payload);
-            }
-        });
-
-        session2.subscribe("/user/sub/queue", new StompFrameHandler() {
-            @Override
-            public Type getPayloadType(StompHeaders headers) { return MatchSnapshot.class; }
-            @Override
-            public void handleFrame(StompHeaders headers, Object payload) {
-                player2Mailbox.complete((MatchSnapshot) payload);
-            }
-        });
+        session1.subscribe("/user/sub/queue", handler(MatchSnapshot.class, p1Box));
+        session2.subscribe("/user/sub/queue", handler(MatchSnapshot.class, p2Box));
 
         session1.send("/app/matchmaking/join", null);
         session2.send("/app/matchmaking/join", null);
 
-        MatchSnapshot matchForPlayer1 = player1Mailbox.get(5, TimeUnit.SECONDS);
-        MatchSnapshot matchForPlayer2 = player2Mailbox.get(5, TimeUnit.SECONDS);
+        sharedMatch = p1Box.get(5, TimeUnit.SECONDS);
+        MatchSnapshot matchForPlayer2 = p2Box.get(5, TimeUnit.SECONDS);
 
-        assertNotNull(matchForPlayer1);
+        assertNotNull(sharedMatch);
         assertNotNull(matchForPlayer2);
-        assertEquals(matchForPlayer1.getMatchId(), matchForPlayer2.getMatchId());
-
-        CompletableFuture<MoveBroadcastDto> gameUpdatesMailbox = new CompletableFuture<>();
-
-        session2.subscribe("/sub/match/" + matchForPlayer1.getMatchId(), new StompFrameHandler() {
-            @Override
-            public Type getPayloadType(StompHeaders headers) { return MoveBroadcastDto.class; }
-            @Override
-            public void handleFrame(StompHeaders headers, Object payload) {
-                gameUpdatesMailbox.complete( (MoveBroadcastDto)  payload);
-            }
-        });
-
-        String matchId = matchForPlayer1.getMatchId();
-        MoveRequestDto move = new MoveRequestDto("e2e4");
-
-        if (matchForPlayer1.getWhitePlayerId().equals(playerModel1.getId())) {
-            session1.send("/app/match/" + matchId + "/move", move);
-        } else {
-            session2.send("/app/match/" + matchId + "/move", move);
-        }
-
-        MoveBroadcastDto updatedmatch = gameUpdatesMailbox.get(5, TimeUnit.SECONDS);
-        assertNotNull(updatedmatch);
-        assertEquals("e2e4", updatedmatch.move());
-
+        assertEquals(sharedMatch.getMatchId(), matchForPlayer2.getMatchId());
     }
 
     @Test
-    void verifyLegalMoveGetsNotifyed() throws Exception {
+    @Order(2)
+    void verifyLegalMoveGetsNotified() throws Exception {
+        assertNotNull(sharedMatch, "Run matchmaking test first");
 
+        CompletableFuture<MoveBroadcastDto> moveBox = new CompletableFuture<>();
+        session2.subscribe("/sub/match/" + sharedMatch.getMatchId(),
+                handler(MoveBroadcastDto.class, moveBox));
+
+        MoveRequestDto move = new MoveRequestDto("e2e4");
+        StompSession whiteSession = sharedMatch.getWhitePlayerId()
+                .equals(playerModel1.getId()) ? session1 : session2;
+
+        whiteSession.send("/app/match/" + sharedMatch.getMatchId() + "/move", move);
+
+        MoveBroadcastDto result = moveBox.get(5, TimeUnit.SECONDS);
+        assertNotNull(result);
+        assertEquals("e2e4", result.move());
+    }
+
+    @Test
+    @Order(3)
+    void verifyDrawOfferIsNotified() throws Exception {
+        CompletableFuture<DrawOfferDto> p2Box = new CompletableFuture<>();
+        CompletableFuture<java.util.Map> endBox = new CompletableFuture<>();
+
+        session2.subscribe("/sub/match/" + sharedMatch.getMatchId(),
+                handler(DrawOfferDto.class, p2Box));
+
+        session1.subscribe("/sub/match/" + sharedMatch.getMatchId(), new StompFrameHandler() {
+            @Override
+            public Type getPayloadType(StompHeaders headers) {
+                return java.util.Map.class;
+            }
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+                java.util.Map map = (java.util.Map) payload;
+                if ("END".equals(map.get("type"))) {
+                    endBox.complete(map);
+                }
+            }
+        });
+
+        session1.send("/app/match/" + sharedMatch.getMatchId() + "/draw", null);
+
+        DrawOfferDto drawOfferdto = p2Box.get(5, TimeUnit.SECONDS);
+        assertNotNull(drawOfferdto);
+
+        session2.send("/app/match/" + sharedMatch.getMatchId() + "/draw", null);
+
+        java.util.Map endMsg = endBox.get(5, TimeUnit.SECONDS);
+        assertNotNull(endMsg);
+        assertEquals("DRAW", endMsg.get("reason"));
+
+        verify(redisTemplate, times(1)).delete("match:" + sharedMatch.getMatchId());
+        verify(chessMatchRepository, times(1)).save(any());
+    }
+    @Test
+    @Order(4)
+    void verifyResignOfferIsNotified() throws Exception {
+        CompletableFuture<MatchSnapshot> p1Box = new CompletableFuture<>();
+        CompletableFuture<java.util.Map> endbox = new CompletableFuture<>();
+
+        session1.subscribe("/user/sub/queue", handler(MatchSnapshot.class, p1Box));
+
+        session1.send("/app/matchmaking/join", null);
+        session2.send("/app/matchmaking/join", null);
+
+        sharedMatch = p1Box.get(5, TimeUnit.SECONDS);
+
+        session2.subscribe("/sub/match/" + sharedMatch.getMatchId(), new StompFrameHandler() {
+            @Override
+            public Type getPayloadType(StompHeaders headers) {
+                return java.util.Map.class;
+            }
+            @Override
+            public void handleFrame(StompHeaders headers, Object payload) {
+                java.util.Map map = (java.util.Map) payload;
+                if ("END".equals(map.get("type"))) {
+                    endbox.complete(map);
+                }
+            }
+        });
+        session1.send("/app/match/" + sharedMatch.getMatchId() + "/resign", null);
+
+        endbox.get(5, TimeUnit.SECONDS);
+        assertNotNull(endbox);
+        verify(redisTemplate, times(1)).delete("match:" + sharedMatch.getMatchId());
+        verify(chessMatchRepository, times(1)).save(any());
+    }
+
+    private <T> StompFrameHandler handler(Class<T> type, CompletableFuture<T> future) {
+        return new StompFrameHandler() {
+            @Override public Type getPayloadType(StompHeaders h) { return type; }
+            @Override @SuppressWarnings("unchecked")
+            public void handleFrame(StompHeaders h, Object p) { future.complete((T) p); }
+        };
     }
 }

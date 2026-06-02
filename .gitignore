@@ -39,3 +39,6 @@ build/
 !.env-sample
 
 compose.override.yaml
+
+# Local notes
+notes.md

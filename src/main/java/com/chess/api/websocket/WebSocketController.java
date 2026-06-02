@@ -13,19 +13,19 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.messaging.handler.annotation.DestinationVariable;
 import org.springframework.messaging.handler.annotation.MessageMapping;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
+
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 
-import java.security.Principal;
 
+import java.security.Principal;
 @Controller
 @RequiredArgsConstructor
 public class WebSocketController {
-
+    private final PlayerRepository playerRepository;
     private final ChessService chessService;
     private final SimpMessagingTemplate messagingTemplate;
     private final MatchmakingService matchmakingService;
-    private final PlayerRepository playerRepository;
     private final SecurityService securityService;
     private final MatchTimerService  matchTimerService;
 
