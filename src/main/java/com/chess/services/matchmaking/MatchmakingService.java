@@ -8,6 +8,7 @@
     import lombok.NoArgsConstructor;
     import lombok.RequiredArgsConstructor;
     import org.springframework.data.redis.core.RedisTemplate;
+    import org.springframework.messaging.simp.SimpMessagingTemplate;
     import org.springframework.scheduling.annotation.Scheduled;
     import org.springframework.stereotype.Service;
 
@@ -20,9 +21,9 @@
     public class MatchmakingService {
 
         private final RedisTemplate<String, Object> redisTemplate;
+        private final SimpMessagingTemplate messagingTemplate;
         private static final long tenMininms=600_000L;
 
-        private final ConcurrentLinkedQueue<Long> waitingQueue = new ConcurrentLinkedQueue<>();
         private static final String STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
         private static final String MATCH_PREFIX = "match:";
         private static final int Number_of_Buckets = 10;
@@ -35,13 +36,14 @@
         @NoArgsConstructor
         class PlayerEntry {
             Long playerId;
+            String playerName;
             int originalBucket;
             long joinTime;
         }
 
         public synchronized MatchSnapshot joinQueue(PlayerModel player) {
             int bucketIdx=FindBucket(player);
-            if(bucketIdx==-1){
+            if(bucketIdx==-1 || buckets[bucketIdx].equals(player.getId())){
                 return null;
             }
             if(buckets[bucketIdx]==-1){
@@ -50,9 +52,9 @@
                 playerEntry.setPlayerId(player.getId());
                 playerEntry.setOriginalBucket(bucketIdx);
                 playerEntry.setJoinTime(System.currentTimeMillis());
+                playerEntry.setPlayerName(player.getUsername());
                 players.put(player.getId(), playerEntry);
-            }
-            else{
+            }else{
                 Long opponentId=buckets[bucketIdx];
                 leaveQueue(opponentId);
                 if (Math.random() < 0.5) {
@@ -112,6 +114,10 @@
             long now = System.currentTimeMillis();
 
             for (PlayerEntry entry : new ArrayList<>(players.values())) {
+                if (!players.containsKey(entry.getPlayerId())) {
+                    continue;
+                }
+
                 long waited = now - entry.getJoinTime();
 
                 if (waited > 20_000) {
@@ -122,6 +128,7 @@
             }
         }
 
+        // 3. Fix expandSearch to actually notify the users
         private void expandSearch(PlayerEntry entry) {
             int[] neighbours = {entry.getOriginalBucket() - 1, entry.getOriginalBucket() + 1};
 
@@ -130,14 +137,21 @@
                 if (buckets[neighbour] == -1L) continue;
 
                 Long opponentId = buckets[neighbour];
+                PlayerEntry opponentEntry = players.get(opponentId);
+
                 leaveQueue(entry.getPlayerId());
                 leaveQueue(opponentId);
 
+                MatchSnapshot snapshot;
                 if (Math.random() < 0.5) {
-                    createLiveMatch(entry.getPlayerId(), opponentId);
+                    snapshot = createLiveMatch(entry.getPlayerId(), opponentId);
                 } else {
-                    createLiveMatch(opponentId, entry.getPlayerId());
+                    snapshot = createLiveMatch(opponentId, entry.getPlayerId());
                 }
+
+
+                messagingTemplate.convertAndSendToUser(entry.getPlayerName(), "/sub/queue", snapshot);
+                messagingTemplate.convertAndSendToUser(opponentEntry.getPlayerName(), "/sub/queue", snapshot);
                 return;
             }
         }

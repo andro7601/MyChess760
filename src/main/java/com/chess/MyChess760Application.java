@@ -7,7 +7,6 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 @Slf4j
 @SpringBootApplication
-@EnableScheduling
 public class MyChess760Application {
 
 	public static void main(String[] args) {
