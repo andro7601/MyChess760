@@ -55,7 +55,14 @@ public class ChessService {
             if (move == null) return null;
 
             board.doMove(move);
-            snapshot.setTurnStartTime(System.currentTimeMillis());
+            long now = System.currentTimeMillis();
+            long elapsed = now - snapshot.getTurnStartTime();
+            if ("WHITE".equals(snapshot.getTurnOwner())) {
+                snapshot.setWhiteTimeRemaining(Math.max(0L, snapshot.getWhiteTimeRemaining() - elapsed));
+            } else {
+                snapshot.setBlackTimeRemaining(Math.max(0L, snapshot.getBlackTimeRemaining() - elapsed));
+            }
+            snapshot.setTurnStartTime(now);
             String updatedPgn = (snapshot.getPgn() == null || snapshot.getPgn().isEmpty())
                     ? moveUci
                     : snapshot.getPgn() + " " + moveUci;
@@ -82,7 +89,7 @@ public class ChessService {
                         reason = ChessMatchModel.WinReason.DRAW_STALEMATE;
 
                     finalizeMatch(snapshot, reason);
-                    return new MatchEndBroadcastDto("END",reason.toString(), snapshot.getWinnerId());
+                    return new MatchEndBroadcastDto("END", reason.toString(), snapshot.getWinnerId(), moveUci);
                 } else {
                     return null;
                 }
@@ -94,7 +101,13 @@ public class ChessService {
             snapshot.setFen(board.getFen());
             snapshot.setTurnOwner(board.getSideToMove().toString());
             redisTemplate.opsForValue().set(redisKey, snapshot, 2, TimeUnit.HOURS);
-            return  new MoveBroadcastDto("MOVE",moveUci,nextTurnColor);
+            return new MoveBroadcastDto(
+                    "MOVE",
+                    moveUci,
+                    nextTurnColor,
+                    snapshot.getWhiteTimeRemaining(),
+                    snapshot.getBlackTimeRemaining()
+            );
 
         } catch (Exception e) {
             return null;
@@ -129,7 +142,7 @@ public class ChessService {
         snapshot.setWinnerId(winnerId);
         finalizeMatch(snapshot, ChessMatchModel.WinReason.RESIGNATION);
         messagingTemplate.convertAndSend("/sub/match/" + matchId,
-                new MatchEndBroadcastDto("END", "RESIGN", winnerId));
+                new MatchEndBroadcastDto("END", "RESIGN", winnerId, null));
     }
 
     public void handleDraw(String matchId, Long playerId) {
@@ -153,6 +166,6 @@ public class ChessService {
         if (snapshot == null) return;
         finalizeMatch(snapshot,ChessMatchModel.WinReason.DRAW_MUTUAL);
         messagingTemplate.convertAndSend("/sub/match/" + matchId,
-                new MatchEndBroadcastDto("END", "DRAW", null));
+                new MatchEndBroadcastDto("END", "DRAW", null, null));
     }
 }

@@ -24,7 +24,6 @@ public class MatchTimerService {
 
     private static final String MATCH_PREFIX = "match:";
 
-    // Cleaned up naming convention & visibility
     public static final long TEN_MINUTES = 600_000L;
 
     // Tracks the last timestamp System.currentTimeMillis() a player was seen
@@ -32,8 +31,6 @@ public class MatchTimerService {
 
     @Scheduled(fixedRate = 10000) // Runs every 10 seconds
     public void checkMatchTimer() {
-        // NOTE: For a massive scale production system, maintain a Redis Set of active matchIds
-        // to avoid calling .keys() entirely.
         Set<String> keys = redisTemplate.keys(MATCH_PREFIX + "*");
         if (keys == null || keys.isEmpty()) return;
 
@@ -58,9 +55,16 @@ public class MatchTimerService {
     }
 
     private WinReason getTerminationReason(MatchSnapshot snapshot, long now) {
-        // 1. Check if they ran completely out of turn time (60 seconds)
-        if (now - snapshot.getTurnStartTime() > 60_000) {
-            return WinReason.TIMEOUT;
+        // 1. Check if they ran completely out of remaining match time
+        long elapsed = now - snapshot.getTurnStartTime();
+        if ("WHITE".equals(snapshot.getTurnOwner())) {
+            if (snapshot.getWhiteTimeRemaining() - elapsed <= 0) {
+                return WinReason.TIMEOUT;
+            }
+        } else {
+            if (snapshot.getBlackTimeRemaining() - elapsed <= 0) {
+                return WinReason.TIMEOUT;
+            }
         }
 
         // 2. Check White Abandonment (No ping for 30s OR never pinged since game started)
@@ -110,7 +114,7 @@ public class MatchTimerService {
             }
         }
         match.setWinnerId(winnerId);
-        MatchEndBroadcastDto end = new MatchEndBroadcastDto("END", reason.toString(), winnerId);
+        MatchEndBroadcastDto end = new MatchEndBroadcastDto("END", reason.toString(), winnerId, null);
         messagingTemplate.convertAndSend("/sub/match/" + match.getMatchId(), end);
     }
 

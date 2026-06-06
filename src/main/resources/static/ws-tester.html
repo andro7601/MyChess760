@@ -62,7 +62,7 @@
             transition: transform 140ms ease, background 140ms ease, border-color 140ms ease, opacity 140ms ease;
         }
 
-        button:hover:not(:disabled) {
+        button:hover:not(:disabled):not(.square) {
             transform: translateY(-1px);
             border-color: var(--line-strong);
             background: rgba(255, 255, 255, 0.13);
@@ -1127,9 +1127,17 @@
     let pendingMove = null;
     let pendingDrawOffer = false;
 
-    $("baseUrl").value = window.location.origin && window.location.origin !== "null"
-        ? window.location.origin
-        : "http://localhost:8080";
+    let defaultBaseUrl = "http://localhost:8080";
+    if (window.location.origin && window.location.origin !== "null" && window.location.protocol !== "file:") {
+        try {
+            const url = new URL(window.location.origin);
+            url.port = "8080";
+            defaultBaseUrl = url.origin;
+        } catch (e) {
+            // fallback
+        }
+    }
+    $("baseUrl").value = defaultBaseUrl;
 
     function appendLog(message, data, type = "") {
         const entry = document.createElement("div");
@@ -1265,7 +1273,19 @@
     }
 
     async function auth(path) {
-        const baseUrl = $("baseUrl").value.trim();
+        let baseUrl = $("baseUrl").value.trim();
+        if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+            baseUrl = "http://" + baseUrl;
+        }
+        try {
+            const url = new URL(baseUrl);
+            url.port = "8080";
+            baseUrl = url.origin;
+            $("baseUrl").value = baseUrl; // update UI
+        } catch (e) {
+            baseUrl = "http://localhost:8080";
+            $("baseUrl").value = baseUrl;
+        }
         try {
             const response = await fetch(`${baseUrl}${path}`, {
                 method: "POST",
@@ -1308,7 +1328,20 @@
             return;
         }
         syncIdentityFromToken();
-        const wsUrl = toWsUrl($("baseUrl").value.trim(), token);
+        let baseUrl = $("baseUrl").value.trim();
+        if (!baseUrl.startsWith("http://") && !baseUrl.startsWith("https://")) {
+            baseUrl = "http://" + baseUrl;
+        }
+        try {
+            const url = new URL(baseUrl);
+            url.port = "8080";
+            baseUrl = url.origin;
+            $("baseUrl").value = baseUrl;
+        } catch (e) {
+            baseUrl = "http://localhost:8080";
+            $("baseUrl").value = baseUrl;
+        }
+        const wsUrl = toWsUrl(baseUrl, token);
         subscriptions = new Set();
         socket = new WebSocket(wsUrl);
         setStatus("Connecting", "connecting");
@@ -1395,13 +1428,33 @@
     }
 
     function handleMoveBroadcast(payload) {
-        applyAcceptedMove(payload.move, payload.turnOwner);
+        let skipLocalDeduction = false;
+        if (payload.whiteTimeRemaining !== undefined) {
+            whiteTimeRemaining = payload.whiteTimeRemaining;
+            skipLocalDeduction = true;
+        }
+        if (payload.blackTimeRemaining !== undefined) {
+            blackTimeRemaining = payload.blackTimeRemaining;
+            skipLocalDeduction = true;
+        }
+        applyAcceptedMove(payload.move, payload.turnOwner, skipLocalDeduction);
     }
 
-    function applyAcceptedMove(moveUci, nextTurnOwner) {
+    function applyAcceptedMove(moveUci, nextTurnOwner, skipLocalDeduction = false) {
         const from = moveUci.slice(0, 2);
         const to = moveUci.slice(2, 4);
         const promotion = moveUci.slice(4) || undefined;
+
+        if (!skipLocalDeduction) {
+            const currentTurn = chess.turn();
+            const elapsed = Math.max(0, Date.now() - turnStartTime);
+            if (currentTurn === "w") {
+                whiteTimeRemaining = Math.max(0, whiteTimeRemaining - elapsed);
+            } else {
+                blackTimeRemaining = Math.max(0, blackTimeRemaining - elapsed);
+            }
+        }
+
         const result = chess.move({ from, to, promotion });
         if (!result) {
             appendLog("Move could not be applied to local board", { move: moveUci, fen: chess.fen() }, "error");
@@ -1436,6 +1489,9 @@
     }
 
     function handleMatchEnd(payload) {
+        if (payload.move) {
+            applyAcceptedMove(payload.move, undefined, true);
+        }
         gameOver = true;
         winnerId = payload.winnerId ?? null;
         pendingDrawOffer = false;
@@ -1650,7 +1706,7 @@
 
     function timeRemainingFor(color) {
         let remaining = color === "w" ? whiteTimeRemaining : blackTimeRemaining;
-        if (matchId && !gameOver && chess.turn() === color && !isLocalGame) {
+        if (matchId && !gameOver && chess.turn() === color) {
             remaining -= Math.max(0, Date.now() - turnStartTime);
         }
         return Math.max(0, remaining);
